@@ -300,19 +300,16 @@ namespace OzzeJobTrackerRestApi.Controllers
                 DataTable dataTable = new DataTable();
                 using (SqlConnection sqlConnection = new SqlConnection(AllVariables.ConnectionString))
                 {
-                    SqlDataAdapter data = new SqlDataAdapter($"SELECT * FROM L_CAPIACC WHERE FIRMNR = 202", sqlConnection);
+                    string query = "SELECT CODE, TITLE FROM LG_202_CLCARD";
+                    SqlDataAdapter data = new SqlDataAdapter(query, sqlConnection);
                     data.Fill(dataTable);
                 }
 
                 cariHesapList = (from DataRow dr in dataTable.Rows
                                  select new CariHesap()
                                  {
-                                     LogicalReference = dr["LOGICALREF"].ToString(),
                                      Kod = dr["CODE"].ToString(),
-                                     Unvan = dr["TITLE"].ToString(),
-                                     Adres = dr["ADDRESS1"].ToString(),
-                                     Telefon = dr["TELNR1"].ToString(),
-                                     Email = dr["EMAILADDR"].ToString()
+                                     Unvan = dr["TITLE"].ToString()
                                  }).ToList();
 
                 return Ok(cariHesapList);
