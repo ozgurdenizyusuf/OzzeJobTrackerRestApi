@@ -289,6 +289,43 @@ namespace OzzeJobTrackerRestApi.Controllers
             {
                 return BadRequest(exc.Message);
             }
+
+        [HttpGet("202/cariHesaplar")]
+        public IActionResult GetCariHesaplar()
+        {
+            List<CariHesap> cariHesapList = new List<CariHesap>();
+
+            try
+            {
+                DataTable dataTable = new DataTable();
+                using (SqlConnection sqlConnection = new SqlConnection(AllVariables.ConnectionString))
+                {
+                    SqlDataAdapter data = new SqlDataAdapter($"SELECT * FROM L_CAPIACC WHERE FIRMNR = 202", sqlConnection);
+                    data.Fill(dataTable);
+                }
+
+                cariHesapList = (from DataRow dr in dataTable.Rows
+                                 select new CariHesap()
+                                 {
+                                     LogicalReference = dr["LOGICALREF"].ToString(),
+                                     Kod = dr["CODE"].ToString(),
+                                     Unvan = dr["TITLE"].ToString(),
+                                     Adres = dr["ADDRESS1"].ToString(),
+                                     Telefon = dr["TELNR1"].ToString(),
+                                     Email = dr["EMAILADDR"].ToString()
+                                 }).ToList();
+
+                return Ok(cariHesapList);
+            }
+            catch (SqlException sqlEx)
+            {
+                return StatusCode(500, $"SQL Error: {sqlEx.Message}");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal Server Error: {ex.Message}");
+            }
+            
         }
     }
 }
