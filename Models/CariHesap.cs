@@ -1,4 +1,4 @@
-// Models/CariHesap.cs
+
 namespace OzzeJobTrackerRestApi.Models
 {
     public class CariHesap
