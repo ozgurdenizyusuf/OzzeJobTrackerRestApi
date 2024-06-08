@@ -269,7 +269,7 @@ namespace OzzeJobTrackerRestApi.Controllers
                 UnityApplication UnityApp = new UnityApplication();
                 UnityApp.Login("Aktarim", "akt", 202);
 
-                Data order = UnityApp.NewDataObject(DataObjectType.doSalesOrder);
+                Data order = UnityApp.NewDataObject(DataObjectType.doSalesOrderSlip);
                 order.New();
                 order.DataFields.FieldByName("NUMBER").Value = "~";
                 order.DataFields.FieldByName("DOC_NUMBER").Value = siparisFisi.BelgeNo;
