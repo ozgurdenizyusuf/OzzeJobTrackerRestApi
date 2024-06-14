@@ -1,4 +1,5 @@
 ﻿// Models/SiparisFisi.cs
+// Models/SiparisFisi.cs
 namespace OzzeJobTrackerRestApi.Models
 {
     public class SiparisFisi
@@ -7,8 +8,8 @@ namespace OzzeJobTrackerRestApi.Models
         public string CariKod { get; set; }
         public DateTime Tarih { get; set; }
         public float Iskonto { get; set; }
-        public float IskontoTutari { get; set; }
-        public float DovizKuru { get; set; }
+        //public float IskontoTutari { get; set; }
+        //public float DovizKuru { get; set; }
         public List<SiparisKalemi> Kalemler { get; set; }
     }
 
@@ -17,11 +18,12 @@ namespace OzzeJobTrackerRestApi.Models
         public string MalzemeKodu { get; set; }
         public float Miktar { get; set; }
         public string Birim { get; set; }
-        public float Fiyat { get; set; }
-        public float Toplam { get; set; }
-        public float IskontoTutari { get; set; }
-        public float VergiMatrahı { get; set; }
-        public float ToplamNet { get; set; }
-        public float DovizKuru { get; set; }
+        //public float Fiyat { get; set; }
+        //public float Toplam { get; set; }
+        //public float IskontoTutari { get; set; }
+        //public float VergiMatrahı { get; set; }
+        //public float ToplamNet { get; set; }
+        //public float DovizKuru { get; set; }
     }
 }
+

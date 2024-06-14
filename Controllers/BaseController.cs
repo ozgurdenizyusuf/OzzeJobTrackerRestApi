@@ -94,7 +94,7 @@ namespace OzzeJobTrackerRestApi.Controllers
                 if (items.Post() == true)
                 {
                     UnityApp.Disconnect();
-                    return Ok("Перемещение было успешно создано.");
+                    return Ok("POST OK !");
                 }
                 else
                 {
@@ -256,12 +256,15 @@ namespace OzzeJobTrackerRestApi.Controllers
 
         }
 
+
+
+
         [HttpPost("createSiparisFisi")]
         public IActionResult CreateSiparisFisi([FromBody] SiparisFisi siparisFisi)
         {
             if (siparisFisi == null || siparisFisi.Kalemler == null)
             {
-                return BadRequest("SiparisFisi veya Kalemler boş olamaz.");
+                return BadRequest("SiparisFisi or Kalemler is null.");
             }
 
             try
@@ -278,34 +281,95 @@ namespace OzzeJobTrackerRestApi.Controllers
 
                 Lines transactions_lines = order.DataFields.FieldByName("TRANSACTIONS").Lines;
 
-                // Sipariş kalemlerini ekleyelim
-                foreach (var kalem in siparisFisi.Kalemler)
+                if (transactions_lines == null)
                 {
-                    transactions_lines.AppendLine();
-                    var line = transactions_lines[transactions_lines.Count - 1];
-                    line.FieldByName("TYPE").Value = 0; // Malzeme
-                    line.FieldByName("ITEM_CODE").Value = kalem.MalzemeKodu;
-                    line.FieldByName("QUANTITY").Value = kalem.Miktar;
-                    line.FieldByName("UNIT_CODE").Value = kalem.Birim;
-                    line.FieldByName("PRICE").Value = kalem.Fiyat; // Eğer fiyatı kaldırmak isterseniz bu satırı kaldırabilirsiniz.
-                    line.FieldByName("TOTAL").Value = kalem.Toplam;
-                    line.FieldByName("DISCOUNT_DISTR").Value = kalem.IskontoTutari;
-                    line.FieldByName("VAT_BASE").Value = kalem.VergiMatrahı;
-                    line.FieldByName("TOTAL_NET").Value = kalem.ToplamNet;
-                    line.FieldByName("RC_XRATE").Value = kalem.DovizKuru;
+                    return BadRequest("Transactions lines are null.");
                 }
 
-                // İskonto uygulaması
+                // Sipariş kalemleri
+                foreach (var kalem in siparisFisi.Kalemler)
+                {
+                    try
+                    {
+                        transactions_lines.AppendLine();
+                        var lineIndex = transactions_lines.Count - 1;
+                        if (lineIndex < 0)
+                        {
+                            return BadRequest("Line index is invalid after appending.");
+                        }
+                        var line = transactions_lines[lineIndex];
+                        if (line == null)
+                        {
+                            return BadRequest("Line is null after appending.");
+                        }
+
+                        // Debug log for each field setting
+                        var typeField = line.FieldByName("TYPE");
+                        if (typeField == null) return BadRequest("Field 'TYPE' is null.");
+                        typeField.Value = 0;
+
+                        var itemCodeField = line.FieldByName("ITEM_CODE");
+                        if (itemCodeField == null)
+                        {
+                            Console.WriteLine("ITEM_CODE field could not be found.");
+                            return BadRequest("Field 'ITEM_CODE' is null.");
+                        }
+                        itemCodeField.Value = kalem.MalzemeKodu ?? throw new ArgumentNullException(nameof(kalem.MalzemeKodu));
+
+                        var quantityField = line.FieldByName("QUANTITY");
+                        if (quantityField == null) return BadRequest("Field 'QUANTITY' is null.");
+                        quantityField.Value = kalem.Miktar;
+
+                        var unitCodeField = line.FieldByName("UNIT_CODE");
+                        if (unitCodeField == null) return BadRequest("Field 'UNIT_CODE' is null.");
+                        unitCodeField.Value = kalem.Birim ?? throw new ArgumentNullException(nameof(kalem.Birim));
+
+                        // Log after each field is set
+                        Console.WriteLine($"Processed kalem: {kalem.MalzemeKodu} - {kalem.Miktar} - {kalem.Birim}");
+                    }
+                    catch (Exception ex)
+                    {
+                        return BadRequest($"Error while processing kalem: {ex.Message}");
+                    }
+                }
+
+                // Varsa iskonto
                 if (siparisFisi.Iskonto > 0)
                 {
-                    transactions_lines.AppendLine();
-                    var discountLine = transactions_lines[transactions_lines.Count - 1];
-                    discountLine.FieldByName("TYPE").Value = 2; // İskonto tipi
-                    discountLine.FieldByName("DETAIL_LEVEL").Value = 1;
-                    discountLine.FieldByName("QUANTITY").Value = 0;
-                    discountLine.FieldByName("TOTAL").Value = siparisFisi.IskontoTutari;
-                    discountLine.FieldByName("DISCOUNT_RATE").Value = siparisFisi.Iskonto;
-                    discountLine.FieldByName("RC_XRATE").Value = siparisFisi.DovizKuru;
+                    try
+                    {
+                        transactions_lines.AppendLine();
+                        var discountLineIndex = transactions_lines.Count - 1;
+                        if (discountLineIndex < 0)
+                        {
+                            return BadRequest("Discount line index is invalid after appending.");
+                        }
+                        var discountLine = transactions_lines[discountLineIndex];
+                        if (discountLine == null)
+                        {
+                            return BadRequest("Discount line is null after appending.");
+                        }
+
+                        var typeField = discountLine.FieldByName("TYPE");
+                        if (typeField == null) return BadRequest("Discount field 'TYPE' is null.");
+                        typeField.Value = 2;
+
+                        var detailLevelField = discountLine.FieldByName("DETAIL_LEVEL");
+                        if (detailLevelField == null) return BadRequest("Discount field 'DETAIL_LEVEL' is null.");
+                        detailLevelField.Value = 1;
+
+                        var quantityField = discountLine.FieldByName("QUANTITY");
+                        if (quantityField == null) return BadRequest("Discount field 'QUANTITY' is null.");
+                        quantityField.Value = 1;
+
+                        var discountRateField = discountLine.FieldByName("DISCOUNT_RATE");
+                        if (discountRateField == null) return BadRequest("Discount field 'DISCOUNT_RATE' is null.");
+                        discountRateField.Value = siparisFisi.Iskonto;
+                    }
+                    catch (Exception ex)
+                    {
+                        return BadRequest($"Error while processing discount: {ex.Message}");
+                    }
                 }
 
                 if (order.Post() == true)
@@ -343,6 +407,46 @@ namespace OzzeJobTrackerRestApi.Controllers
                 return BadRequest(ex.Message);
             }
         }
+
+
+
+
+
+        [HttpGet("202/cariHesaplar")]
+        public IActionResult GetCariHesaplar()
+        {
+            List<CariHesap> cariHesapList = new List<CariHesap>();
+
+            try
+            {
+                DataTable dataTable = new DataTable();
+                using (SqlConnection sqlConnection = new SqlConnection(AllVariables.ConnectionString))
+                {
+                    string query = "SELECT CODE, SPECODE, DEFINITION_ FROM LG_202_CLCARD";
+                    SqlDataAdapter data = new SqlDataAdapter(query, sqlConnection);
+                    data.Fill(dataTable);
+                }
+
+                cariHesapList = (from DataRow dr in dataTable.Rows
+                                 select new CariHesap()
+                                 {
+                                     Kod = dr["CODE"].ToString(),
+                                     Unvan = dr["DEFINITION_"].ToString(),
+                                     OzelKod = dr["SPECODE"].ToString()
+                                 }).ToList();
+
+                return Ok(cariHesapList);
+            }
+            catch (SqlException sqlEx)
+            {
+                return StatusCode(500, $"SQL Error: {sqlEx.Message}");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal Server Error: {ex.Message}");
+            }
+        }
+        //Buradan devam
 
     }
 }

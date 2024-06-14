@@ -1,4 +1,4 @@
-// Models/CariHesap.cs
+// Models/Malzeme.cs
 namespace OzzeJobTrackerRestApi.Models
 {
     public class Malzeme
