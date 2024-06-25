@@ -448,5 +448,55 @@ namespace OzzeJobTrackerRestApi.Controllers
         }
         //Buradan devam
 
+        [HttpGet("202/urunler")]
+        public IActionResult GetUrunler()
+        {
+            List<Urun> urunList = new List<Urun>();
+
+            try
+            {
+                using (SqlConnection sqlConnection = new SqlConnection(AllVariables.ConnectionString))
+                {
+                    string query = @"
+                        SELECT 
+                            CODE AS Kod, 
+                            NAME AS Aciklama, 
+                            UNIT AS AnaBirim, 
+                            (SELECT SUM(AMOUNT) FROM LG_202_01_STLINE WHERE STOCKREF = StkKart.LOGICALREF) AS FiiliStok, 
+                            SPECODE AS OzelKod, 
+                            STGRPCODE AS GrupKodu, 
+                            PACKAGE AS KoliIci 
+                        FROM LG_202_ITEMS AS StkKart 
+                        WHERE ACTIVE = 0
+                        ORDER BY CODE";
+                    SqlDataAdapter dataAdapter = new SqlDataAdapter(query, sqlConnection);
+                    DataTable dataTable = new DataTable();
+                    dataAdapter.Fill(dataTable);
+
+                    urunList = dataTable.AsEnumerable().Select(row => new Urun
+                    {
+                        Kod = row.Field<string>("Kod"),
+                        Aciklama = row.Field<string>("Aciklama"),
+                        AnaBirim = row.Field<string>("AnaBirim"),
+                        FiiliStok = row.Field<decimal>("FiiliStok"),
+                        OzelKod = row.Field<string>("OzelKod"),
+                        GrupKodu = row.Field<string>("GrupKodu"),
+                        KoliIci = row.Field<decimal?>("KoliIci")
+                    }).ToList();
+                }
+
+                return Ok(urunList);
+            }
+            catch (SqlException sqlEx)
+            {
+                return StatusCode(500, $"SQL Error: {sqlEx.Message}");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal Server Error: {ex.Message}");
+            }
+        }
+
+
     }
 }
