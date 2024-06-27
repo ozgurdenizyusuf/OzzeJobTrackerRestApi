@@ -84,7 +84,7 @@ namespace OzzeJobTrackerRestApi.Controllers
                 //transactions_lines[transactions_lines.Count - 1].FieldByName("PROJECT_CODE").Value = OZZE + KASPI;
                 //transactions_lines[transactions_lines.Count - 1].FieldByName("ORGLINKREF").Value = 216689;
                 //transactions_lines[transactions_lines.Count - 1].FieldByName("EDT_CURR").Value = 1;
-                transactions_lines[transactions_lines.Count - 1].FieldByName("AUXIL_CODE2").Value = ambarFisi.HareketOzelKodu2; 
+                transactions_lines[transactions_lines.Count - 1].FieldByName("AUXIL_CODE2").Value = ambarFisi.HareketOzelKodu2;
                 //transactions_lines[transactions_lines.Count - 1].FieldByName("GTIP_CODE").Value = 6403999600;
                 //items.DataFields.FieldByName("SHIP_DATE").Value = 06.09.2026;
                 //items.DataFields.FieldByName("SHIP_TIME").Value = 169944921;
@@ -422,7 +422,7 @@ namespace OzzeJobTrackerRestApi.Controllers
                 DataTable dataTable = new DataTable();
                 using (SqlConnection sqlConnection = new SqlConnection(AllVariables.ConnectionString))
                 {
-                    string query = "SELECT CODE, SPECODE, DEFINITION_ FROM LG_202_CLCARD";
+                    string query = "SELECT CODE, SPECODE, DEFINITION_ FROM LG_202_CLCARD WHERE CODE LIKE '120.%'";
                     SqlDataAdapter data = new SqlDataAdapter(query, sqlConnection);
                     data.Fill(dataTable);
                 }
@@ -447,6 +447,86 @@ namespace OzzeJobTrackerRestApi.Controllers
             }
         }
         //Buradan devam
+
+        [HttpGet("202/urunler")]
+        public IActionResult GetUrunler()
+        {
+            List<Urun> urunList = new List<Urun>();
+
+            try
+            {
+                DataTable dataTable = new DataTable();
+                using (SqlConnection sqlConnection = new SqlConnection(AllVariables.ConnectionString))
+                {
+                    string query = @"
+                SET DATEFORMAT DMY;
+                SELECT 
+                    StkKart.CODE AS Kod,
+                    StkKart.NAME AS Aciklama,
+                    StkKart.SPECODE AS OzelKod,
+                    StkKart.STGRPCODE AS GrupKodu,
+                    ISNULL((
+                        SELECT SUM(AMOUNT * (CASE UINFO2 WHEN '' THEN 1 WHEN 0 THEN 1 ELSE UINFO2 END) / (CASE UINFO1 WHEN '' THEN 1 WHEN 0 THEN 1 ELSE UINFO1 END))
+                        FROM Lbs_db_fc..LG_202_01_STLINE
+                        WHERE 
+                            TRCODE IN (1, 2, 3, 13, 14, 25, 50, 15, 16, 17, 18, 19) AND
+                            STOCKREF = StkKart.LOGICALREF AND
+                            DATE_ <= '31.12.2029' AND
+                            CANCELLED = 0 AND
+                            LINETYPE = 0 AND
+                            IOCODE IN (1, 2)
+                    ), 0) - ISNULL((
+                        SELECT SUM(AMOUNT * (CASE UINFO2 WHEN '' THEN 1 WHEN 0 THEN 1 ELSE UINFO2 END) / (CASE UINFO1 WHEN '' THEN 1 WHEN 0 THEN 1 ELSE UINFO1 END))
+                        FROM Lbs_db_fc..LG_202_01_STLINE
+                        WHERE 
+                            TRCODE IN (6, 7, 8, 11, 12, 25, 51, 20, 21, 22, 23, 24) AND
+                            STOCKREF = StkKart.LOGICALREF AND
+                            DATE_ <= '31.12.2029' AND
+                            CANCELLED = 0 AND
+                            LINETYPE = 0 AND
+                            IOCODE IN (3, 4)
+                    ), 0) AS FiiliStok,
+                    UNITSETL.CODE AS AnaBirim
+                FROM Lbs_db_fc..LG_202_ITEMS AS StkKart
+                LEFT JOIN 
+                    Lbs_db_fc..LG_202_UNITSETL UNITSETL ON StkKart.UNITSETREF = UNITSETL.UNITSETREF AND UNITSETL.MAINUNIT = 1
+                WHERE 
+                    StkKart.CardType IN (1, 2, 3, 10, 11, 12) AND
+                    StkKart.ACTIVE = 0
+                ORDER BY StkKart.CODE;
+            ";
+                    SqlDataAdapter data = new SqlDataAdapter(query, sqlConnection);
+                    data.Fill(dataTable);
+                }
+
+                urunList = (from DataRow dr in dataTable.Rows
+                            select new Urun()
+                            {
+                                Kod = dr["Kod"].ToString(),
+                                Aciklama = dr["Aciklama"].ToString(),
+                                AnaBirim = dr["AnaBirim"].ToString(),
+                                FiiliStok = Convert.ToDecimal(dr["FiiliStok"]),
+                                OzelKod = dr["OzelKod"].ToString(),
+                                GrupKodu = dr["GrupKodu"].ToString()
+                            }).ToList();
+
+                return Ok(urunList);
+            }
+            catch (SqlException sqlEx)
+            {
+                return StatusCode(500, $"SQL Error: {sqlEx.Message}");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal Server Error: {ex.Message}");
+            }
+        }
+
+
+
+
+        //Buraya kadar
+
 
     }
 }
