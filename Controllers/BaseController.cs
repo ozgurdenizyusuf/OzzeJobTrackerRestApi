@@ -3,6 +3,7 @@ using OzzeJobTrackerRestApi.Helpers;
 using OzzeJobTrackerRestApi.Models;
 using System.Data;
 using System.Data.SqlClient;
+using System.Text.Json;
 using UnityObjects;
 
 namespace OzzeJobTrackerRestApi.Controllers
@@ -262,152 +263,97 @@ namespace OzzeJobTrackerRestApi.Controllers
         [HttpPost("createSiparisFisi")]
         public IActionResult CreateSiparisFisi([FromBody] SiparisFisi siparisFisi)
         {
-            if (siparisFisi == null || siparisFisi.Kalemler == null)
+            Console.WriteLine($"Gelen sipariş fişi: {System.Text.Json.JsonSerializer.Serialize(siparisFisi)}");
+
+            if (siparisFisi == null || siparisFisi.Kalemler == null || !siparisFisi.Kalemler.Any())
             {
-                return BadRequest("SiparisFisi or Kalemler is null.");
+                return BadRequest("SiparisFisi is null or Kalemler is empty.");
+            }
+
+            if (siparisFisi.ToplamTutar <= 0)
+            {
+                return BadRequest("ToplamTutar must be greater than 0.");
             }
 
             try
             {
                 UnityApplication UnityApp = new UnityApplication();
                 UnityApp.Login("Aktarim", "akt", 202);
-
                 Data order = UnityApp.NewDataObject(DataObjectType.doSalesOrderSlip);
                 order.New();
                 order.DataFields.FieldByName("NUMBER").Value = "~";
                 order.DataFields.FieldByName("DOC_NUMBER").Value = siparisFisi.BelgeNo;
                 order.DataFields.FieldByName("ARP_CODE").Value = siparisFisi.CariKod;
                 order.DataFields.FieldByName("DATE").Value = siparisFisi.Tarih.ToShortDateString();
+                order.DataFields.FieldByName("CURRSEL_TOTAL").Value = 1; // TL cinsinden
 
                 Lines transactions_lines = order.DataFields.FieldByName("TRANSACTIONS").Lines;
-
                 if (transactions_lines == null)
                 {
                     return BadRequest("Transactions lines are null.");
                 }
 
-                // Sipariş kalemleri
+                decimal totalGross = 0;
                 foreach (var kalem in siparisFisi.Kalemler)
                 {
-                    try
+                    if (string.IsNullOrEmpty(kalem.MalzemeKodu) || kalem.Miktar <= 0 || string.IsNullOrEmpty(kalem.Birim) || kalem.Fiyat <= 0)
                     {
-                        transactions_lines.AppendLine();
-                        var lineIndex = transactions_lines.Count - 1;
-                        if (lineIndex < 0)
-                        {
-                            return BadRequest("Line index is invalid after appending.");
-                        }
-                        var line = transactions_lines[lineIndex];
-                        if (line == null)
-                        {
-                            return BadRequest("Line is null after appending.");
-                        }
-
-                        // Debug log for each field setting
-                        var typeField = line.FieldByName("TYPE");
-                        if (typeField == null) return BadRequest("Field 'TYPE' is null.");
-                        typeField.Value = 0;
-
-                        var itemCodeField = line.FieldByName("ITEM_CODE");
-                        if (itemCodeField == null)
-                        {
-                            Console.WriteLine("ITEM_CODE field could not be found.");
-                            return BadRequest("Field 'ITEM_CODE' is null.");
-                        }
-                        itemCodeField.Value = kalem.MalzemeKodu ?? throw new ArgumentNullException(nameof(kalem.MalzemeKodu));
-
-                        var quantityField = line.FieldByName("QUANTITY");
-                        if (quantityField == null) return BadRequest("Field 'QUANTITY' is null.");
-                        quantityField.Value = kalem.Miktar;
-
-                        var unitCodeField = line.FieldByName("UNIT_CODE");
-                        if (unitCodeField == null) return BadRequest("Field 'UNIT_CODE' is null.");
-                        unitCodeField.Value = kalem.Birim ?? throw new ArgumentNullException(nameof(kalem.Birim));
-
-                        // Log after each field is set
-                        Console.WriteLine($"Processed kalem: {kalem.MalzemeKodu} - {kalem.Miktar} - {kalem.Birim}");
+                        return BadRequest($"Invalid item: MalzemeKodu={kalem.MalzemeKodu}, Miktar={kalem.Miktar}, Birim={kalem.Birim}, Fiyat={kalem.Fiyat}");
                     }
-                    catch (Exception ex)
-                    {
-                        return BadRequest($"Error while processing kalem: {ex.Message}");
-                    }
+                    transactions_lines.AppendLine();
+                    var lineIndex = transactions_lines.Count - 1;
+                    transactions_lines[lineIndex].FieldByName("TYPE").Value = 0;
+                    transactions_lines[lineIndex].FieldByName("MASTER_CODE").Value = kalem.MalzemeKodu;
+                    transactions_lines[lineIndex].FieldByName("QUANTITY").Value = kalem.Miktar;
+                    transactions_lines[lineIndex].FieldByName("PRICE").Value = kalem.Fiyat;
+                    transactions_lines[lineIndex].FieldByName("UNIT_CODE").Value = kalem.Birim;
+                    transactions_lines[lineIndex].FieldByName("VAT_RATE").Value = kalem.KDVOrani;
+                    transactions_lines[lineIndex].FieldByName("UNIT_CONV1").Value = 1;
+                    transactions_lines[lineIndex].FieldByName("UNIT_CONV2").Value = 1;
+                    transactions_lines[lineIndex].FieldByName("EDT_CURR").Value = 1;
+
+                    decimal lineTotal = kalem.Miktar * kalem.Fiyat;
+                    transactions_lines[lineIndex].FieldByName("TOTAL").Value = lineTotal;
+                    totalGross += lineTotal;
+
+                    Console.WriteLine($"Eklenen kalem: Kod={kalem.MalzemeKodu}, Miktar={kalem.Miktar}, Fiyat={kalem.Fiyat}, Toplam={lineTotal}");
                 }
 
-                // Varsa iskonto
+                order.DataFields.FieldByName("TOTAL_GROSS").Value = totalGross;
+                order.DataFields.FieldByName("TOTAL_NET").Value = totalGross * (1 - siparisFisi.Iskonto / 100);
+
+                Console.WriteLine($"Toplam Brüt: {totalGross}, Toplam Net: {totalGross * (1 - siparisFisi.Iskonto / 100)}");
+
                 if (siparisFisi.Iskonto > 0)
                 {
-                    try
-                    {
-                        transactions_lines.AppendLine();
-                        var discountLineIndex = transactions_lines.Count - 1;
-                        if (discountLineIndex < 0)
-                        {
-                            return BadRequest("Discount line index is invalid after appending.");
-                        }
-                        var discountLine = transactions_lines[discountLineIndex];
-                        if (discountLine == null)
-                        {
-                            return BadRequest("Discount line is null after appending.");
-                        }
-
-                        var typeField = discountLine.FieldByName("TYPE");
-                        if (typeField == null) return BadRequest("Discount field 'TYPE' is null.");
-                        typeField.Value = 2;
-
-                        var detailLevelField = discountLine.FieldByName("DETAIL_LEVEL");
-                        if (detailLevelField == null) return BadRequest("Discount field 'DETAIL_LEVEL' is null.");
-                        detailLevelField.Value = 1;
-
-                        var quantityField = discountLine.FieldByName("QUANTITY");
-                        if (quantityField == null) return BadRequest("Discount field 'QUANTITY' is null.");
-                        quantityField.Value = 1;
-
-                        var discountRateField = discountLine.FieldByName("DISCOUNT_RATE");
-                        if (discountRateField == null) return BadRequest("Discount field 'DISCOUNT_RATE' is null.");
-                        discountRateField.Value = siparisFisi.Iskonto;
-                    }
-                    catch (Exception ex)
-                    {
-                        return BadRequest($"Error while processing discount: {ex.Message}");
-                    }
+                    transactions_lines.AppendLine();
+                    var discountLineIndex = transactions_lines.Count - 1;
+                    var discountLine = transactions_lines[discountLineIndex];
+                    discountLine.FieldByName("TYPE").Value = 2; // İskonto tipi
+                    discountLine.FieldByName("QUANTITY").Value = 1; // Tek satır olarak işlem yap
+                    discountLine.FieldByName("DISCOUNT_RATE").Value = siparisFisi.Iskonto; // Gelen iskonto oranı
+                    Console.WriteLine($"İskonto eklendi: {siparisFisi.Iskonto}%");
                 }
 
-                if (order.Post() == true)
+                if (order.Post())
                 {
+                    Console.WriteLine($"Sipariş başarıyla oluşturuldu. Referans No: {order.DataFields.FieldByName("INTERNAL_REFERENCE").Value}");
                     UnityApp.Disconnect();
                     return Ok("POST OK !");
                 }
                 else
                 {
-                    if (order.ErrorCode != 0)
-                    {
-                        UnityApp.Disconnect();
-                        return BadRequest("DBError(" + order.ErrorCode.ToString() + ")-" + order.ErrorDesc + order.DBErrorDesc);
-                    }
-                    else if (order.ValidateErrors.Count > 0)
-                    {
-                        string hataMesaji = "XML ErrorList:";
-                        for (int i = 0; i < order.ValidateErrors.Count; i++)
-                        {
-                            hataMesaji += "(" + order.ValidateErrors[i].ID.ToString() + ") - " + order.ValidateErrors[i].Error;
-                        }
-
-                        UnityApp.Disconnect();
-                        return BadRequest(hataMesaji);
-                    }
-                    else
-                    {
-                        UnityApp.Disconnect();
-                        return BadRequest();
-                    }
+                    Console.WriteLine($"Sipariş oluşturulamadı. Hata: {order.ErrorCode} - {order.ErrorDesc}");
+                    UnityApp.Disconnect();
+                    return BadRequest($"Order could not be posted. Error: {order.ErrorCode} - {order.ErrorDesc}");
                 }
             }
             catch (Exception ex)
             {
-                return BadRequest(ex.Message);
+                Console.WriteLine($"Exception occurred: {ex.Message}");
+                return BadRequest($"An error occurred: {ex.Message}");
             }
         }
-
 
 
 
@@ -452,53 +398,54 @@ namespace OzzeJobTrackerRestApi.Controllers
         public IActionResult GetUrunler()
         {
             List<Urun> urunList = new List<Urun>();
-
             try
             {
                 DataTable dataTable = new DataTable();
                 using (SqlConnection sqlConnection = new SqlConnection(AllVariables.ConnectionString))
                 {
                     string query = @"
-                SET DATEFORMAT DMY;
-                SELECT 
-                    StkKart.CODE AS Kod,
-                    StkKart.NAME AS Aciklama,
-                    StkKart.SPECODE AS OzelKod,
-                    StkKart.STGRPCODE AS GrupKodu,
-                    ISNULL((
-                        SELECT SUM(AMOUNT * (CASE UINFO2 WHEN '' THEN 1 WHEN 0 THEN 1 ELSE UINFO2 END) / (CASE UINFO1 WHEN '' THEN 1 WHEN 0 THEN 1 ELSE UINFO1 END))
-                        FROM Lbs_db_fc..LG_202_01_STLINE
-                        WHERE 
-                            TRCODE IN (1, 2, 3, 13, 14, 25, 50, 15, 16, 17, 18, 19) AND
-                            STOCKREF = StkKart.LOGICALREF AND
-                            DATE_ <= '31.12.2029' AND
-                            CANCELLED = 0 AND
-                            LINETYPE = 0 AND
-                            IOCODE IN (1, 2)
-                    ), 0) - ISNULL((
-                        SELECT SUM(AMOUNT * (CASE UINFO2 WHEN '' THEN 1 WHEN 0 THEN 1 ELSE UINFO2 END) / (CASE UINFO1 WHEN '' THEN 1 WHEN 0 THEN 1 ELSE UINFO1 END))
-                        FROM Lbs_db_fc..LG_202_01_STLINE
-                        WHERE 
-                            TRCODE IN (6, 7, 8, 11, 12, 25, 51, 20, 21, 22, 23, 24) AND
-                            STOCKREF = StkKart.LOGICALREF AND
-                            DATE_ <= '31.12.2029' AND
-                            CANCELLED = 0 AND
-                            LINETYPE = 0 AND
-                            IOCODE IN (3, 4)
-                    ), 0) AS FiiliStok,
-                    UNITSETL.CODE AS AnaBirim
-                FROM Lbs_db_fc..LG_202_ITEMS AS StkKart
-                LEFT JOIN 
-                    Lbs_db_fc..LG_202_UNITSETL UNITSETL ON StkKart.UNITSETREF = UNITSETL.UNITSETREF AND UNITSETL.MAINUNIT = 1
-                WHERE 
-                    StkKart.CardType IN (1, 2, 3, 10, 11, 12) AND
-                    StkKart.ACTIVE = 0
-                ORDER BY StkKart.CODE;
-            ";
+            SET DATEFORMAT DMY;
+            SELECT 
+                StkKart.CODE AS Kod,
+                StkKart.NAME AS Aciklama,
+                StkKart.SPECODE AS OzelKod,
+                StkKart.STGRPCODE AS GrupKodu,
+                ISNULL((
+                    SELECT SUM(AMOUNT * (CASE UINFO2 WHEN '' THEN 1 WHEN 0 THEN 1 ELSE UINFO2 END) / (CASE UINFO1 WHEN '' THEN 1 WHEN 0 THEN 1 ELSE UINFO1 END))
+                    FROM Lbs_db_fc..LG_202_01_STLINE
+                    WHERE 
+                        TRCODE IN (1, 2, 3, 13, 14, 25, 50, 15, 16, 17, 18, 19) AND
+                        STOCKREF = StkKart.LOGICALREF AND
+                        DATE_ <= '31.12.2029' AND
+                        CANCELLED = 0 AND
+                        LINETYPE = 0 AND
+                        IOCODE IN (1, 2)
+                ), 0) - ISNULL((
+                    SELECT SUM(AMOUNT * (CASE UINFO2 WHEN '' THEN 1 WHEN 0 THEN 1 ELSE UINFO2 END) / (CASE UINFO1 WHEN '' THEN 1 WHEN 0 THEN 1 ELSE UINFO1 END))
+                    FROM Lbs_db_fc..LG_202_01_STLINE
+                    WHERE 
+                        TRCODE IN (6, 7, 8, 11, 12, 25, 51, 20, 21, 22, 23, 24) AND
+                        STOCKREF = StkKart.LOGICALREF AND
+                        DATE_ <= '31.12.2029' AND
+                        CANCELLED = 0 AND
+                        LINETYPE = 0 AND
+                        IOCODE IN (3, 4)
+                ), 0) AS FiiliStok,
+                UNITSETL.CODE AS AnaBirim,
+                ISNULL(PrcList.PRICE, 0) AS Fiyat
+            FROM Lbs_db_fc..LG_202_ITEMS AS StkKart
+            LEFT JOIN 
+                Lbs_db_fc..LG_202_UNITSETL UNITSETL ON StkKart.UNITSETREF = UNITSETL.UNITSETREF AND UNITSETL.MAINUNIT = 1
+            LEFT JOIN
+                Lbs_db_fc..LG_202_PRCLIST PrcList ON StkKart.LOGICALREF = PrcList.CARDREF AND PrcList.PTYPE = 2
+            WHERE 
+                StkKart.CardType IN (1, 2, 3, 10, 11, 12) AND
+                StkKart.ACTIVE = 0
+            ORDER BY StkKart.CODE;
+        ";
                     SqlDataAdapter data = new SqlDataAdapter(query, sqlConnection);
                     data.Fill(dataTable);
                 }
-
                 urunList = (from DataRow dr in dataTable.Rows
                             select new Urun()
                             {
@@ -507,9 +454,9 @@ namespace OzzeJobTrackerRestApi.Controllers
                                 AnaBirim = dr["AnaBirim"].ToString(),
                                 FiiliStok = Convert.ToDecimal(dr["FiiliStok"]),
                                 OzelKod = dr["OzelKod"].ToString(),
-                                GrupKodu = dr["GrupKodu"].ToString()
+                                GrupKodu = dr["GrupKodu"].ToString(),
+                                Fiyat = Convert.ToDecimal(dr["Fiyat"])
                             }).ToList();
-
                 return Ok(urunList);
             }
             catch (SqlException sqlEx)

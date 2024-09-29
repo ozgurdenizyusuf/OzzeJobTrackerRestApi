@@ -8,6 +8,6 @@
         public decimal FiiliStok { get; set; }
         public string OzelKod { get; set; }
         public string GrupKodu { get; set; }
-        public string KoliIci { get; set; }
+        public decimal Fiyat { get; set; }
     }
 }
